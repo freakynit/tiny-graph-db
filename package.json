@@ -1,0 +1,33 @@
+{
+  "name": "tiny-graph-db",
+  "version": "1.0.0",
+  "description": "A tiny, no-external-dependency, disk-based graph database for Node.js with rich set of operations.",
+  "main": "src/tiny-graph-db.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "graph-database",
+    "nodejs",
+    "embedded",
+    "graphrag",
+    "tiny"
+  ],
+  "author": "Nitin Bansal <nitinbansal85@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/freakynit/tiny-graph-db.git"
+  },
+  "files": [
+    "src/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "bugs": {
+    "url": "https://github.com/freakynit/tiny-graph-db/issues"
+  },
+  "homepage": "https://github.com/freakynit/tiny-graph-db#readme"
+}
