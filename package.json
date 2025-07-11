@@ -1,8 +1,8 @@
 {
   "name": "tiny-graph-db",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A tiny, no-external-dependency, disk-based graph database for Node.js with rich set of operations.",
-  "main": "src/tiny-graph-db.js",
+  "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

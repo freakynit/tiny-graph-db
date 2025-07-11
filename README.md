@@ -47,7 +47,7 @@ A **tiny**, **no-external-dependencies**, **disk-based** graph database for Node
 ## Installation
 
 ```bash
-npm install tiny-graph-db # NOTE: Available from 10'th July 2025
+npm install tiny-graph-db
 ````
 
 ---
