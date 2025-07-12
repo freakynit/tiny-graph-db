@@ -283,7 +283,7 @@ importData(data: { nodes; relations })
 * `getStats()`
   `{ nodeCount, relationCount, avgDegree }`
 * `flushToDisk()`
-  Flushes the graph to DB. Everything by-default is always flushed to disk. See `flush` param in `addNode()` and `addRelation()` methods.
+  Flushes the graph to disk. Everything by-default is always flushed to disk. See `flush` param in `addNode()` and `addRelation()` methods.
 
 ---
 

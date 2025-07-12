@@ -1,6 +1,6 @@
 {
   "name": "tiny-graph-db",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A tiny, no-external-dependency, disk-based graph database for Node.js with rich set of operations.",
   "main": "src/index.js",
   "scripts": {
