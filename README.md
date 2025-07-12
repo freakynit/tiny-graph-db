@@ -4,6 +4,7 @@ A **tiny**, **no-external-dependencies**, **disk-based** graph database for Node
 
 - Persist simple node-&-edge graphs in a JSON file, and query, traverse or mutate them entirely in JavaScript.
 - TinyGraphDB is a great fit for building lightweight, GraphRAG systems — where LLMs retrieve knowledge via structured traversals instead of just flat vector search.
+- Pretty fast too. See `Performance Benchmarks` section.
 
 ---
 
@@ -20,8 +21,8 @@ A **tiny**, **no-external-dependencies**, **disk-based** graph database for Node
   - [Graph Traversal](#graph-traversal)  
   - [Import / Export](#import--export)  
   - [Utility](#utility)  
-- [Examples](#examples)  
-- [CLI Usage](#cli-usage)  
+- [Examples](#examples)   
+- [Performance Benchmarks](#performance-benchmarks)
 - [Contributing](#contributing)  
 - [License](#license)  
 
@@ -97,25 +98,25 @@ new TinyGraphDB(filePath?: string)
 
 ### Node Operations
 
-| Method                                 | Description                                    | Returns               |
-| -------------------------------------- | ---------------------------------------------- | --------------------- |
-| `addNode(name: string, metadata = {})` | Creates a node with given name & metadata      | `Node` object         |
-| `getNode(nodeId: string)`              | Fetches a node by its ID                       | `Node` or `undefined` |
-| `getAllNodes()`                        | Returns all nodes                              | `Node[]`              |
-| `updateNode(nodeId: string, updates)`  | Update name and/or metadata on a node          | Updated `Node`        |
-| `deleteNode(nodeId: string)`           | Deletes a node and all its connected relations | Deleted `Node`        |
-| `deleteBySearch('node', conditions)`   | Deletes **all** nodes matching `conditions`    | `Node[]`              |
+| Method                                               | Description                                    | Returns               |
+|------------------------------------------------------| ---------------------------------------------- | --------------------- |
+| `addNode(name: string, metadata = {}, flush = true)` | Creates a node with given name & metadata      | `Node` object         |
+| `getNode(nodeId: string)`                            | Fetches a node by its ID                       | `Node` or `undefined` |
+| `getAllNodes()`                                      | Returns all nodes                              | `Node[]`              |
+| `updateNode(nodeId: string, updates)`                | Update name and/or metadata on a node          | Updated `Node`        |
+| `deleteNode(nodeId: string)`                         | Deletes a node and all its connected relations | Deleted `Node`        |
+| `deleteBySearch('node', conditions)`                 | Deletes **all** nodes matching `conditions`    | `Node[]`              |
 
 ### Relation Operations
 
-| Method                                                   | Description                                     | Returns                   |
-| -------------------------------------------------------- | ----------------------------------------------- | ------------------------- |
-| `addRelation(name, fromNodeId, toNodeId, metadata = {})` | Creates an edge between two existing nodes      | `Relation`                |
-| `getRelation(relationId: string)`                        | Fetches a relation by ID                        | `Relation` or `undefined` |
-| `getAllRelations()`                                      | Returns all relations                           | `Relation[]`              |
-| `updateRelation(relationId, updates)`                    | Update name and/or metadata on a relation       | Updated `Relation`        |
-| `deleteRelation(relationId: string)`                     | Deletes a single relation                       | Deleted `Relation`        |
-| `deleteBySearch('relation', conditions)`                 | Deletes **all** relations matching `conditions` | `Relation[]`              |
+| Method                                                                 | Description                                     | Returns                   |
+|------------------------------------------------------------------------| ----------------------------------------------- | ------------------------- |
+| `addRelation(name, fromNodeId, toNodeId, metadata = {}, flush = true)` | Creates an edge between two existing nodes      | `Relation`                |
+| `getRelation(relationId: string)`                                      | Fetches a relation by ID                        | `Relation` or `undefined` |
+| `getAllRelations()`                                                    | Returns all relations                           | `Relation[]`              |
+| `updateRelation(relationId, updates)`                                  | Update name and/or metadata on a relation       | Updated `Relation`        |
+| `deleteRelation(relationId: string)`                                   | Deletes a single relation                       | Deleted `Relation`        |
+| `deleteBySearch('relation', conditions)`                               | Deletes **all** relations matching `conditions` | `Relation[]`              |
 
 ---
 
@@ -133,18 +134,6 @@ traverseFromMetadata(metadataConditions, maxDepth?)
   * `directions`: `['outgoing','incoming']`
   * `relationName?`: filter by relation name
 * **Returns**: an array of `[ fromNode, relation, toNode ]` tuples.
-
----
-
-### Import / Export
-
-```ts
-exportData(): { nodes: Node[]; relations: Relation[] }
-importData(data: { nodes; relations })
-```
-
-* `exportData()` returns a JSON-serializable object.
-* `importData(...)` wipes current graph and loads provided data, then persists.
 
 ---
 
@@ -275,12 +264,40 @@ console.log(result);
 
 ---
 
+### Import / Export
+
+```ts
+exportData(): { nodes: Node[]; relations: Relation[] }
+importData(data: { nodes; relations })
+```
+
+* `exportData()` returns a JSON-serializable object.
+* `importData(...)` wipes current graph and loads provided data, then persists.
+
+---
+
 ### Utility
 
 * `getNeighbors(nodeId)`
   List all adjacent nodes & relation directions.
 * `getStats()`
   `{ nodeCount, relationCount, avgDegree }`
+* `flushToDisk()`
+  Flushes the graph to DB. Everything by-default is always flushed to disk. See `flush` param in `addNode()` and `addRelation()` methods.
+
+---
+
+### Performance Benchmarks
+1. Benchmarking script: `node src/benchmark.js 1000 2000 5` or `npm run benchmark -- 1000 2000 5`
+2. 1000 nodes, ~2000 relations, 5 rounds
+3. Results 
+
+  | Function            | Time (ms) | Ops/sec       |
+  |---------------------|-----------|---------------|
+  | `getNode()`         | 0.0001    | 8,473,743      |
+  | `traverseFromNode()`| 0.0072    | 138,175        |
+  | `searchNodes()`     | 0.1728    | 5,787          |
+
 
 ---
 

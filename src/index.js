@@ -61,13 +61,13 @@ class TinyGraphDB {
     }
 
     /**
-     * saveToFile()
+     * flushToDisk()
      * @description
      *   Serializes `nodes` + `relations` to JSON and writes to disk.
      *   Overwrites atomically, with errors logged to console.
      * @returns {void}
      */
-    saveToFile() {
+    flushToDisk() {
         try {
             const data = {
                 nodes: Array.from(this.nodes.values()),
@@ -113,7 +113,7 @@ class TinyGraphDB {
      * @returns {{id:string,name:string,metadata:Object}} the new node
      * @throws if name is empty or metadata not an object
      */
-    addNode(name, metadata = {}) {
+    addNode(name, metadata = {}, flush = true) {
         if (typeof name !== 'string' || name.trim() === '') {
             throw new Error('Node name must be a non-empty string');
         }
@@ -128,7 +128,7 @@ class TinyGraphDB {
         };
         this.nodes.set(node.id, node);
         this.nodeRelations.set(node.id, new Set());
-        this.saveToFile();
+        if(flush) this.flushToDisk();
         return node;
     }
 
@@ -144,7 +144,7 @@ class TinyGraphDB {
      * @returns {{id:string,name:string,fromNodeId:string,toNodeId:string,metadata:Object}}
      * @throws if either nodeId doesn’t exist
      */
-    addRelation(name, fromNodeId, toNodeId, metadata = {}) {
+    addRelation(name, fromNodeId, toNodeId, metadata = {}, flush = true) {
         if (!this.nodes.has(fromNodeId) || !this.nodes.has(toNodeId)) {
             throw new Error('Both nodes must exist before creating a relation');
         }
@@ -160,7 +160,7 @@ class TinyGraphDB {
         this.relations.set(relation.id, relation);
         this.nodeRelations.get(fromNodeId).add(relation.id);
         this.nodeRelations.get(toNodeId).add(relation.id);
-        this.saveToFile();
+        if(flush) this.flushToDisk();
         return relation;
     }
 
@@ -436,7 +436,7 @@ class TinyGraphDB {
             };
         }
         
-        this.saveToFile();
+        this.flushToDisk();
         return node;
     }
 
@@ -465,7 +465,7 @@ class TinyGraphDB {
             };
         }
         
-        this.saveToFile();
+        this.flushToDisk();
         return relation;
     }
 
@@ -534,7 +534,7 @@ class TinyGraphDB {
         this.nodes.delete(nodeId);
         this.nodeRelations.delete(nodeId);
         
-        this.saveToFile();
+        this.flushToDisk();
         return node;
     }
 
@@ -560,7 +560,7 @@ class TinyGraphDB {
         // Delete the relation
         this.relations.delete(relationId);
         
-        this.saveToFile();
+        this.flushToDisk();
         return relation;
     }
 
@@ -722,7 +722,7 @@ class TinyGraphDB {
         }
         
         this.rebuildNodeRelationsIndex();
-        this.saveToFile();
+        this.flushToDisk();
     }
 
     /**
