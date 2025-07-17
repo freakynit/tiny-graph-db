@@ -1,11 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-
 /**
  * @class TinyGraphDB
  * @description
- *   A simple disk-backed graph store.
+ *   A simple disk-backed graph store with cosine similarity search support.
  *   Internally maintains:
  *     - `nodes: Map<id, {id,name,metadata}>`
  *     - `relations: Map<id, {id,name,fromNodeId,toNodeId,metadata}>`
@@ -21,7 +20,7 @@ class TinyGraphDB {
         this.relations = new Map(); // relationId -> { id, name, fromNodeId, toNodeId, metadata }
         this.nodeRelations = new Map(); // nodeId -> Set of relationIds
         this.idCounter = 0;
-        
+
         this.loadFromFile();
     }
 
@@ -37,21 +36,21 @@ class TinyGraphDB {
         try {
             if (fs.existsSync(this.filePath)) {
                 const data = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
-                
+
                 // Restore nodes
                 if (data.nodes) {
                     data.nodes.forEach(node => {
                         this.nodes.set(node.id, node);
                     });
                 }
-                
+
                 // Restore relations
                 if (data.relations) {
                     data.relations.forEach(relation => {
                         this.relations.set(relation.id, relation);
                     });
                 }
-                
+
                 // Rebuild node-relations index
                 this.rebuildNodeRelationsIndex();
             }
@@ -89,18 +88,18 @@ class TinyGraphDB {
      * @returns {void}
      */
     rebuildNodeRelationsIndex() {
-      this.nodeRelations.clear();
-      
-      // 1. Ensure every node starts with an empty set
-      this.nodes.forEach((_, nodeId) => {
-        this.nodeRelations.set(nodeId, new Set());
-      });
+        this.nodeRelations.clear();
 
-      // 2. Populate from relations
-      this.relations.forEach(relation => {
-        this.nodeRelations.get(relation.fromNodeId).add(relation.id);
-        this.nodeRelations.get(relation.toNodeId).add(relation.id);
-      });
+        // 1. Ensure every node starts with an empty set
+        this.nodes.forEach((_, nodeId) => {
+            this.nodeRelations.set(nodeId, new Set());
+        });
+
+        // 2. Populate from relations
+        this.relations.forEach(relation => {
+            this.nodeRelations.get(relation.fromNodeId).add(relation.id);
+            this.nodeRelations.get(relation.toNodeId).add(relation.id);
+        });
     }
 
     /**
@@ -142,13 +141,13 @@ class TinyGraphDB {
      * @param {string} toNodeId – target node UUID
      * @param {Object} [metadata={}] – JSON-safe payload
      * @returns {{id:string,name:string,fromNodeId:string,toNodeId:string,metadata:Object}}
-     * @throws if either nodeId doesn’t exist
+     * @throws if either nodeId doesn't exist
      */
     addRelation(name, fromNodeId, toNodeId, metadata = {}, flush = true) {
         if (!this.nodes.has(fromNodeId) || !this.nodes.has(toNodeId)) {
             throw new Error('Both nodes must exist before creating a relation');
         }
-        
+
         const relation = {
             id: this.generateId(),
             name,
@@ -156,7 +155,7 @@ class TinyGraphDB {
             toNodeId,
             metadata: this._clone(metadata)
         };
-        
+
         this.relations.set(relation.id, relation);
         this.nodeRelations.get(fromNodeId).add(relation.id);
         this.nodeRelations.get(toNodeId).add(relation.id);
@@ -180,46 +179,46 @@ class TinyGraphDB {
      * @returns {Array<[node, relation, node]>} triplets in visit order
      */
     traverseFromNode(startNodeId, options = {}) {
-      const {
-        maxDepth = Infinity,
-        directions  = ['outgoing', 'incoming'],
-        relationName = null                       // optional filter
-      } = options;
+        const {
+            maxDepth = Infinity,
+            directions  = ['outgoing', 'incoming'],
+            relationName = null                       // optional filter
+        } = options;
 
-      const visitedNodes     = new Set();
-      const visitedRelations = new Set();
-      const result           = [];
+        const visitedNodes     = new Set();
+        const visitedRelations = new Set();
+        const result           = [];
 
-      const traverse = (nodeId, depth) => {
-        if (depth > maxDepth || visitedNodes.has(nodeId)) return;
-        visitedNodes.add(nodeId);
+        const traverse = (nodeId, depth) => {
+            if (depth > maxDepth || visitedNodes.has(nodeId)) return;
+            visitedNodes.add(nodeId);
 
-        for (const relId of this.nodeRelations.get(nodeId) || []) {
-          if (visitedRelations.has(relId)) continue;
-          const rel = this.relations.get(relId);
-          if (!rel) continue;
+            for (const relId of this.nodeRelations.get(nodeId) || []) {
+                if (visitedRelations.has(relId)) continue;
+                const rel = this.relations.get(relId);
+                if (!rel) continue;
 
-          // apply name filter
-          if (relationName && rel.name !== relationName) continue;
+                // apply name filter
+                if (relationName && rel.name !== relationName) continue;
 
-          // determine direction
-          const isOut = rel.fromNodeId === nodeId;
-          const dir = isOut ? 'outgoing' : 'incoming';
-          if (!directions.includes(dir)) continue;
+                // determine direction
+                const isOut = rel.fromNodeId === nodeId;
+                const dir = isOut ? 'outgoing' : 'incoming';
+                if (!directions.includes(dir)) continue;
 
-          const otherNodeId = isOut ? rel.toNodeId : rel.fromNodeId;
-          const otherNode   = this.nodes.get(otherNodeId);
-          if (!otherNode) continue;
+                const otherNodeId = isOut ? rel.toNodeId : rel.fromNodeId;
+                const otherNode   = this.nodes.get(otherNodeId);
+                if (!otherNode) continue;
 
-          visitedRelations.add(relId);
-          result.push([ this.nodes.get(nodeId), rel, otherNode ]);
+                visitedRelations.add(relId);
+                result.push([ this.nodes.get(nodeId), rel, otherNode ]);
 
-          traverse(otherNodeId, depth + 1);
-        }
-      };
+                traverse(otherNodeId, depth + 1);
+            }
+        };
 
-      traverse(startNodeId, 0);
-      return result;
+        traverse(startNodeId, 0);
+        return result;
     }
 
     /**
@@ -234,24 +233,24 @@ class TinyGraphDB {
     traverseFromRelation(startRelationId, maxDepth = null) {
         const relation = this.relations.get(startRelationId);
         if (!relation) return [];
-        
+
         const visited = new Set();
         const result = [];
-        
+
         const traverse = (relationId, depth) => {
             if (maxDepth !== null && depth > maxDepth) return;
             if (visited.has(relationId)) return;
-            
+
             visited.add(relationId);
             const rel = this.relations.get(relationId);
             if (!rel) return;
-            
+
             const fromNode = this.nodes.get(rel.fromNodeId);
             const toNode = this.nodes.get(rel.toNodeId);
-            
+
             if (fromNode && toNode) {
                 result.push([fromNode, rel, toNode]);
-                
+
                 // Continue traversal from connected nodes
                 [rel.fromNodeId, rel.toNodeId].forEach(nodeId => {
                     const connectedRelations = this.nodeRelations.get(nodeId) || new Set();
@@ -263,7 +262,7 @@ class TinyGraphDB {
                 });
             }
         };
-        
+
         traverse(startRelationId, 0);
         return result;
     }
@@ -281,9 +280,9 @@ class TinyGraphDB {
     traverseFromMetadata(metadataConditions, maxDepth = null) {
         const matchingNodes = this.searchNodes({ metadata: metadataConditions });
         const matchingRelations = this.searchRelations({ metadata: metadataConditions });
-        
+
         const allResults = new Set();
-        
+
         // Traverse from matching nodes
         matchingNodes.forEach(node => {
             const results = this.traverseFromNode(node.id, maxDepth);
@@ -291,7 +290,7 @@ class TinyGraphDB {
                 allResults.add(JSON.stringify(result));
             });
         });
-        
+
         // Traverse from matching relations
         matchingRelations.forEach(relation => {
             const results = this.traverseFromRelation(relation.id, maxDepth);
@@ -299,7 +298,7 @@ class TinyGraphDB {
                 allResults.add(JSON.stringify(result));
             });
         });
-        
+
         // Convert back to array format and deduplicate
         return Array.from(allResults).map(result => JSON.parse(result));
     }
@@ -314,13 +313,13 @@ class TinyGraphDB {
      */
     searchNodes(conditions = {}) {
         const results = [];
-        
+
         this.nodes.forEach(node => {
             if (this.matchesConditions(node, conditions)) {
                 results.push(node);
             }
         });
-        
+
         return results;
     }
 
@@ -333,14 +332,355 @@ class TinyGraphDB {
      */
     searchRelations(conditions = {}) {
         const results = [];
-        
+
         this.relations.forEach(relation => {
             if (this.matchesConditions(relation, conditions)) {
                 results.push(relation);
             }
         });
-        
+
         return results;
+    }
+
+    /**
+     * searchNodesByCosineSimilarity(queryEmbedding, options)
+     * @description
+     *   Finds nodes with embeddings similar to the query embedding using cosine similarity.
+     * @param {number[]} queryEmbedding - The query embedding vector
+     * @param {Object} [options={}]
+     * @param {string} [options.embeddingKey='embedding'] - Key in metadata where embedding is stored
+     * @param {number} [options.threshold=0.5] - Minimum cosine similarity threshold
+     * @param {number} [options.limit=10] - Maximum number of results to return
+     * @returns {Array<{node: Object, similarity: number}>} - Nodes with similarity scores
+     */
+    searchNodesByCosineSimilarity(queryEmbedding, options = {}) {
+        const {
+            embeddingKey = 'embedding',
+            threshold = 0.5,
+            limit = 10
+        } = options;
+
+        if (!Array.isArray(queryEmbedding) || queryEmbedding.length === 0) {
+            throw new Error('Query embedding must be a non-empty array');
+        }
+
+        const results = [];
+
+        this.nodes.forEach(node => {
+            const embedding = node.metadata[embeddingKey];
+            if (Array.isArray(embedding)) {
+                const similarity = this.cosineSimilarity(queryEmbedding, embedding);
+                if (similarity >= threshold) {
+                    results.push({ node, similarity });
+                }
+            }
+        });
+
+        // Sort by similarity (descending) and apply limit
+        return results
+            .sort((a, b) => b.similarity - a.similarity)
+            .slice(0, limit);
+    }
+
+    /**
+     * searchRelationsByCosineSimilarity(queryEmbedding, options)
+     * @description
+     *   Finds relations with embeddings similar to the query embedding using cosine similarity.
+     * @param {number[]} queryEmbedding - The query embedding vector
+     * @param {Object} [options={}]
+     * @param {string} [options.embeddingKey='embedding'] - Key in metadata where embedding is stored
+     * @param {number} [options.threshold=0.5] - Minimum cosine similarity threshold
+     * @param {number} [options.limit=10] - Maximum number of results to return
+     * @returns {Array<{relation: Object, similarity: number}>} - Relations with similarity scores
+     */
+    searchRelationsByCosineSimilarity(queryEmbedding, options = {}) {
+        const {
+            embeddingKey = 'embedding',
+            threshold = 0.5,
+            limit = 10
+        } = options;
+
+        if (!Array.isArray(queryEmbedding) || queryEmbedding.length === 0) {
+            throw new Error('Query embedding must be a non-empty array');
+        }
+
+        const results = [];
+
+        this.relations.forEach(relation => {
+            const embedding = relation.metadata[embeddingKey];
+            if (Array.isArray(embedding)) {
+                const similarity = this.cosineSimilarity(queryEmbedding, embedding);
+                if (similarity >= threshold) {
+                    results.push({ relation, similarity });
+                }
+            }
+        });
+
+        // Sort by similarity (descending) and apply limit
+        return results
+            .sort((a, b) => b.similarity - a.similarity)
+            .slice(0, limit);
+    }
+
+    /**
+     * cosineSimilarity(vecA, vecB)
+     * @description
+     *   Calculates cosine similarity between two vectors.
+     *   Returns a value between -1 and 1, where 1 means identical direction.
+     * @param {number[]} vecA - First vector
+     * @param {number[]} vecB - Second vector
+     * @returns {number} - Cosine similarity score
+     */
+    cosineSimilarity(vecA, vecB) {
+        if (!Array.isArray(vecA) || !Array.isArray(vecB)) {
+            throw new Error('Both vectors must be arrays');
+        }
+
+        if (vecA.length !== vecB.length) {
+            throw new Error('Vectors must have the same length');
+        }
+
+        if (vecA.length === 0) {
+            return 0;
+        }
+
+        let dotProduct = 0;
+        let magnitudeA = 0;
+        let magnitudeB = 0;
+
+        for (let i = 0; i < vecA.length; i++) {
+            dotProduct += vecA[i] * vecB[i];
+            magnitudeA += vecA[i] * vecA[i];
+            magnitudeB += vecB[i] * vecB[i];
+        }
+
+        magnitudeA = Math.sqrt(magnitudeA);
+        magnitudeB = Math.sqrt(magnitudeB);
+
+        if (magnitudeA === 0 || magnitudeB === 0) {
+            return 0;
+        }
+
+        return dotProduct / (magnitudeA * magnitudeB);
+    }
+
+    /**
+     * searchAndTraverse(queryEmbedding, options)
+     * @description
+     *   GraphRAG-ready method that finds entities by cosine similarity and other filters,
+     *   then traverses from each match for specified hops in a hierarchical structure.
+     * @param {number[]} queryEmbedding - The query embedding vector
+     * @param {Object} [options={}]
+     * @param {string} [options.embeddingKey='embedding'] - Key in metadata where embedding is stored
+     * @param {number} [options.threshold=0.5] - Minimum cosine similarity threshold
+     * @param {number} [options.limit=10] - Maximum number of initial matches
+     * @param {number} [options.hops=3] - Number of hops to traverse from each initial match
+     * @param {Object} [options.nodeFilters={}] - Additional filters for nodes
+     * @param {Object} [options.relationFilters={}] - Additional filters for relations
+     * @param {boolean} [options.searchNodes=true] - Whether to search nodes
+     * @param {boolean} [options.searchRelations=true] - Whether to search relations
+     * @param {string[]} [options.directions=['outgoing','incoming']] - Traversal directions
+     * @param {boolean} [options.endOnNode=false] - Whether to ensure traversal always ends on a node
+     * @returns {Array<{type: string, entity: Object, similarity?: number, outgoingRelations?: Array, incomingRelations?: Array, fromNode?: Object, toNode?: Object}>}
+     */
+    searchAndTraverse(queryEmbedding, options = {}) {
+        const {
+            embeddingKey = 'embedding',
+            threshold = 0.5,
+            limit = 10,
+            hops = 3,
+            nodeFilters = {},
+            relationFilters = {},
+            searchNodes = true,
+            searchRelations = true,
+            directions = ['outgoing', 'incoming'],
+            endOnNode = false
+        } = options;
+
+        if (!Array.isArray(queryEmbedding) || queryEmbedding.length === 0) {
+            throw new Error('Query embedding must be a non-empty array');
+        }
+
+        const results = [];
+        const initialMatches = [];
+
+        // Find initial node matches
+        if (searchNodes) {
+            const nodeMatches = this.searchNodesByCosineSimilarity(queryEmbedding, {
+                embeddingKey,
+                threshold,
+                limit: Math.ceil(limit / (searchRelations ? 2 : 1))
+            });
+
+            // Apply additional node filters
+            const filteredNodeMatches = nodeMatches.filter(match =>
+                this.matchesConditions(match.node, nodeFilters)
+            );
+
+            initialMatches.push(...filteredNodeMatches.map(match => ({
+                type: 'node',
+                entity: match.node,
+                similarity: match.similarity
+            })));
+        }
+
+        // Find initial relation matches
+        if (searchRelations) {
+            const relationMatches = this.searchRelationsByCosineSimilarity(queryEmbedding, {
+                embeddingKey,
+                threshold,
+                limit: Math.ceil(limit / (searchNodes ? 2 : 1))
+            });
+
+            // Apply additional relation filters
+            const filteredRelationMatches = relationMatches.filter(match =>
+                this.matchesConditions(match.relation, relationFilters)
+            );
+
+            initialMatches.push(...filteredRelationMatches.map(match => ({
+                type: 'relation',
+                entity: match.relation,
+                similarity: match.similarity
+            })));
+        }
+
+        // Sort by similarity and take top results
+        initialMatches.sort((a, b) => b.similarity - a.similarity);
+        const topMatches = initialMatches.slice(0, limit);
+
+        // Build hierarchical structure from each initial match
+        for (const initialMatch of topMatches) {
+            const hierarchicalResult = this._buildHierarchicalStructure(
+                initialMatch.type,
+                initialMatch.entity,
+                hops,
+                directions,
+                endOnNode,
+                initialMatch.similarity
+            );
+
+            if (hierarchicalResult) {
+                results.push(hierarchicalResult);
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * _buildHierarchicalStructure(entityType, entity, maxHops, directions, endOnNode, similarity)
+     * @internal
+     * @description
+     *   Helper method to build hierarchical structure from either a node or relation.
+     * @param {'node'|'relation'} entityType
+     * @param {Object} entity
+     * @param {number} maxHops
+     * @param {string[]} directions
+     * @param {boolean} endOnNode
+     * @param {number} [similarity] - Similarity score for root entity
+     * @returns {Object} Hierarchical structure
+     */
+    _buildHierarchicalStructure(entityType, entity, maxHops, directions, endOnNode, similarity) {
+        const visited = new Set();
+
+        const buildNode = (nodeEntity, depth) => {
+            if (depth > maxHops || visited.has(`node:${nodeEntity.id}`)) {
+                return {
+                    type: 'node',
+                    entity: nodeEntity,
+                    ...(depth === 0 && similarity !== undefined ? { similarity } : {}),
+                    outgoingRelations: [],
+                    incomingRelations: []
+                };
+            }
+
+            visited.add(`node:${nodeEntity.id}`);
+
+            const nodeResult = {
+                type: 'node',
+                entity: nodeEntity,
+                ...(depth === 0 && similarity !== undefined ? { similarity } : {}),
+                outgoingRelations: [],
+                incomingRelations: []
+            };
+
+            // Don't traverse further if we're at max hops
+            if (depth >= maxHops) {
+                return nodeResult;
+            }
+
+            // Get connected relations
+            const relationIds = this.nodeRelations.get(nodeEntity.id) || new Set();
+            for (const relationId of relationIds) {
+                const relation = this.relations.get(relationId);
+                if (!relation || visited.has(`relation:${relationId}`)) continue;
+
+                // Check direction
+                const isOutgoing = relation.fromNodeId === nodeEntity.id;
+                const direction = isOutgoing ? 'outgoing' : 'incoming';
+                if (!directions.includes(direction)) continue;
+
+                const relationStructure = buildRelation(relation, depth + 1, nodeEntity.id);
+                if (relationStructure) {
+                    if (isOutgoing) {
+                        nodeResult.outgoingRelations.push(relationStructure);
+                    } else {
+                        nodeResult.incomingRelations.push(relationStructure);
+                    }
+                }
+            }
+
+            return nodeResult;
+        };
+
+        const buildRelation = (relationEntity, depth, fromNodeId) => {
+            if (depth > maxHops || visited.has(`relation:${relationEntity.id}`)) {
+                return {
+                    type: 'relation',
+                    entity: relationEntity,
+                    ...(depth === 0 && similarity !== undefined ? { similarity } : {}),
+                    fromNode: null,
+                    toNode: null
+                };
+            }
+
+            visited.add(`relation:${relationEntity.id}`);
+
+            const relationResult = {
+                type: 'relation',
+                entity: relationEntity,
+                ...(depth === 0 && similarity !== undefined ? { similarity } : {}),
+                fromNode: null,
+                toNode: null
+            };
+
+            // If we're at max hops and endOnNode is false, don't traverse to nodes
+            if (depth >= maxHops && !endOnNode) {
+                return relationResult;
+            }
+
+            // Build connected nodes
+            const fromNode = this.nodes.get(relationEntity.fromNodeId);
+            const toNode = this.nodes.get(relationEntity.toNodeId);
+
+            if (fromNode) {
+                relationResult.fromNode = buildNode(fromNode, depth + 1);
+            }
+
+            if (toNode) {
+                relationResult.toNode = buildNode(toNode, depth + 1);
+            }
+
+            return relationResult;
+        };
+
+        if (entityType === 'node') {
+            return buildNode(entity, 0);
+        } else if (entityType === 'relation') {
+            return buildRelation(entity, 0);
+        }
+
+        return null;
     }
 
     /**
@@ -349,8 +689,9 @@ class TinyGraphDB {
      * @description
      *   Generic predicate that checks each `conditions` key:
      *     - `metadata`: calls `matchesMetadataConditions`
-     *     - `name`: exact, RegExp, or “contains” filter
+     *     - `name`: exact, RegExp, or "contains" filter
      *     - `id`, `fromNodeId`, `toNodeId`: strict equal
+     *     - `cosineSimilarity`: performs cosine similarity search
      * @param {Object} entity
      * @param {Object} conditions
      * @returns {boolean}
@@ -359,6 +700,17 @@ class TinyGraphDB {
         for (const [key, value] of Object.entries(conditions)) {
             if (key === 'metadata') {
                 if (!this.matchesMetadataConditions(entity.metadata, value)) {
+                    return false;
+                }
+            } else if (key === 'cosineSimilarity') {
+                // Handle cosine similarity condition
+                const { queryEmbedding, embeddingKey = 'embedding', threshold = 0.5 } = value;
+                const embedding = entity.metadata[embeddingKey];
+                if (!Array.isArray(embedding)) {
+                    return false;
+                }
+                const similarity = this.cosineSimilarity(queryEmbedding, embedding);
+                if (similarity < threshold) {
                     return false;
                 }
             } else if (key === 'name') {
@@ -384,6 +736,7 @@ class TinyGraphDB {
      * @description
      *   For each key in `conditions`, applies operators:
      *     `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `contains`, `in`, etc.
+     *     Also supports `cosineSimilarity` for vector comparisons.
      * @param {Object} metadata
      * @param {Object} conditions
      * @returns {boolean}
@@ -391,7 +744,7 @@ class TinyGraphDB {
     matchesMetadataConditions(metadata, conditions) {
         for (const [key, condition] of Object.entries(conditions)) {
             const value = metadata[key];
-            
+
             if (typeof condition === 'object' && condition !== null) {
                 if (condition.eq !== undefined && value !== condition.eq) return false;
                 if (condition.ne !== undefined && value === condition.ne) return false;
@@ -403,6 +756,18 @@ class TinyGraphDB {
                 if (condition.startsWith !== undefined && !String(value).startsWith(String(condition.startsWith))) return false;
                 if (condition.endsWith !== undefined && !String(value).endsWith(String(condition.endsWith))) return false;
                 if (condition.in !== undefined && !condition.in.includes(value)) return false;
+
+                // Handle cosine similarity in metadata conditions
+                if (condition.cosineSimilarity !== undefined) {
+                    const { queryEmbedding, threshold = 0.5 } = condition.cosineSimilarity;
+                    if (!Array.isArray(value) || !Array.isArray(queryEmbedding)) {
+                        return false;
+                    }
+                    const similarity = this.cosineSimilarity(queryEmbedding, value);
+                    if (similarity < threshold) {
+                        return false;
+                    }
+                }
             } else {
                 if (value !== condition) return false;
             }
@@ -425,17 +790,17 @@ class TinyGraphDB {
         if (!node) {
             throw new Error(`Node with id ${nodeId} not found`);
         }
-        
+
         if (updates.name !== undefined) {
             node.name = updates.name;
         }
         if (updates.metadata !== undefined) {
             node.metadata = {
-              ...node.metadata,
-              ...this._clone(updates.metadata)
+                ...node.metadata,
+                ...this._clone(updates.metadata)
             };
         }
-        
+
         this.flushToDisk();
         return node;
     }
@@ -454,17 +819,17 @@ class TinyGraphDB {
         if (!relation) {
             throw new Error(`Relation with id ${relationId} not found`);
         }
-        
+
         if (updates.name !== undefined) {
             relation.name = updates.name;
         }
         if (updates.metadata !== undefined) {
             relation.metadata = {
-              ...rel.metadata,
-              ...this._clone(updates.metadata)
+                ...relation.metadata,
+                ...this._clone(updates.metadata)
             };
         }
-        
+
         this.flushToDisk();
         return relation;
     }
@@ -481,7 +846,7 @@ class TinyGraphDB {
      */
     updateBySearch(entityType, searchConditions, updates) {
         const results = [];
-        
+
         if (entityType === 'node') {
             const nodes = this.searchNodes(searchConditions);
             nodes.forEach(node => {
@@ -493,7 +858,7 @@ class TinyGraphDB {
                 results.push(this.updateRelation(relation.id, updates));
             });
         }
-        
+
         return results;
     }
 
@@ -502,7 +867,7 @@ class TinyGraphDB {
      * @description
      *   Removes a node and all its attached relations:
      *     1. Deletes relations from `relations` map
-     *     2. Cleans up other nodes’ `nodeRelations` sets
+     *     2. Cleans up other nodes' `nodeRelations` sets
      *     3. Deletes node entry
      *     4. Persists changes
      * @param {string} nodeId
@@ -514,13 +879,13 @@ class TinyGraphDB {
         if (!node) {
             throw new Error(`Node with id ${nodeId} not found`);
         }
-        
+
         // Delete all relations connected to this node
         const relationIds = this.nodeRelations.get(nodeId) || new Set();
         relationIds.forEach(relationId => {
             this.relations.delete(relationId);
         });
-        
+
         // Remove from other nodes' relation sets
         this.nodeRelations.forEach((relations, otherNodeId) => {
             if (otherNodeId !== nodeId) {
@@ -529,11 +894,11 @@ class TinyGraphDB {
                 });
             }
         });
-        
+
         // Delete the node and its relations
         this.nodes.delete(nodeId);
         this.nodeRelations.delete(nodeId);
-        
+
         this.flushToDisk();
         return node;
     }
@@ -541,7 +906,7 @@ class TinyGraphDB {
     /**
      * deleteRelation(relationId)
      * @description
-     *   Removes an edge, updates its two endpoints’ `nodeRelations`,
+     *   Removes an edge, updates its two endpoints' `nodeRelations`,
      *   and persists.
      * @param {string} relationId
      * @returns {relation} the removed relation
@@ -552,14 +917,14 @@ class TinyGraphDB {
         if (!relation) {
             throw new Error(`Relation with id ${relationId} not found`);
         }
-        
+
         // Remove from node-relations index
         this.nodeRelations.get(relation.fromNodeId)?.delete(relationId);
         this.nodeRelations.get(relation.toNodeId)?.delete(relationId);
-        
+
         // Delete the relation
         this.relations.delete(relationId);
-        
+
         this.flushToDisk();
         return relation;
     }
@@ -575,7 +940,7 @@ class TinyGraphDB {
      */
     deleteBySearch(entityType, searchConditions) {
         const results = [];
-        
+
         if (entityType === 'node') {
             const nodes = this.searchNodes(searchConditions);
             nodes.forEach(node => {
@@ -587,7 +952,7 @@ class TinyGraphDB {
                 results.push(this.deleteRelation(relation.id));
             });
         }
-        
+
         return results;
     }
 
@@ -607,7 +972,6 @@ class TinyGraphDB {
      *   Returns an array of every relation in the graph.
      * @returns {Array<relation>}
      */
-
     getAllRelations() {
         return Array.from(this.relations.values());
     }
@@ -646,7 +1010,7 @@ class TinyGraphDB {
     getNeighbors(nodeId) {
         const neighbors = [];
         const relationIds = this.nodeRelations.get(nodeId) || new Set();
-        
+
         relationIds.forEach(relationId => {
             const relation = this.relations.get(relationId);
             if (relation) {
@@ -661,7 +1025,7 @@ class TinyGraphDB {
                 }
             }
         });
-        
+
         return neighbors;
     }
 
@@ -708,19 +1072,19 @@ class TinyGraphDB {
         this.nodes.clear();
         this.relations.clear();
         this.nodeRelations.clear();
-        
+
         if (data.nodes) {
             data.nodes.forEach(node => {
                 this.nodes.set(node.id, node);
             });
         }
-        
+
         if (data.relations) {
             data.relations.forEach(relation => {
                 this.relations.set(relation.id, relation);
             });
         }
-        
+
         this.rebuildNodeRelationsIndex();
         this.flushToDisk();
     }

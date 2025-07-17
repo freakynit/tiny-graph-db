@@ -1,57 +1,51 @@
 # TinyGraphDB
 
-A **tiny**, **no-external-dependencies**, **disk-based** graph database for Node.js with rich set of operations.  
+A **tiny**, no-external-dependencies, **disk-based** graph database for Node.js with rich query, traversal, batch ops, batch cosine similarity, and semantic filtering.
 
-- Persist simple node-&-edge graphs in a JSON file, and query, traverse or mutate them entirely in JavaScript.
-- TinyGraphDB is a great fit for building lightweight, GraphRAG systems — where LLMs retrieve knowledge via structured traversals instead of just flat vector search.
-- Pretty fast too. See `Performance Benchmarks` section.
-
----
+- Persist node-&-relation graphs in a JSON file
+- Query, traverse, mutate, and semantically search graphs in JavaScript
+- **Cosine similarity search** of nodes & edges via vector embeddings for AI/semantic-graph use cases
+- **Batch** and hierarchical traversals, semantic+traditional queries, and stats
+- Full API for CRUD, batch, similarity, statistics, import/export, and traversal
 
 ## Table of Contents
 
-- [Features](#features)  
-- [Installation](#installation)  
-- [Quick Start](#quick-start)  
-- [API](#api)  
-  - [Constructor](#constructor)  
-  - [Node Operations](#node-operations)  
-  - [Relation Operations](#relation-operations)  
-  - [Query & Search](#query--search)  
-  - [Graph Traversal](#graph-traversal)  
-  - [Import / Export](#import--export)  
-  - [Utility](#utility)  
-- [Examples](#examples)   
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [API](#api)
+  - [Constructor](#constructor)
+  - [Node Operations](#node-operations)
+  - [Relation Operations](#relation-operations)
+  - [Query & Search](#query--search)
+  - [Cosine Similarity Search](#cosine-similarity-search)
+  - [Graph Traversal](#graph-traversal)
+  - [Batch Update / Delete](#batch-update--delete)
+  - [GraphRAG & Hierarchical Traversal](#graphrag--hierarchical-traversal)
+  - [Import / Export](#import--export)
+  - [Utility](#utility)
+- [Examples](#examples)
 - [Performance Benchmarks](#performance-benchmarks)
-- [Contributing](#contributing)  
-- [License](#license)  
-
----
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
 - ✅ **Persistent storage**  
-  Automatically saves all nodes & relations to a JSON file on each change.  
-- 🔍 **Searchable**  
-  Find nodes or edges by name, metadata, IDs or via complex metadata filters.  
-- 🔄 **Traversals**  
-  Breadth-first-style traversals from any node or relation, with depth, direction and name filters.  
-- 🔧 **CRUD + Batch Ops**  
-  Create, read, update or delete single or multiple nodes/relations by search criteria.  
-- 📈 **Statistics**  
-  Get `nodeCount`, `relationCount` and `avgDegree`.  
-- 🔄 **Import/Export**  
-  Dump your graph into JSON, or load an existing JSON graph.  
-
----
+  All nodes & edges auto-saved to a JSON file
+- 🔍 **Search**: name, metadata, ID, relation endpoints, and semantic/meta comparison
+- 🧮 **Cosine Similarity** queries for embeddings in metadata (nodes or relations)
+- 🔄 **Graph Traversal**, walk/batch from node, relation, or metadata; supports direction/depth/name filters
+- ⬇️ **Batch update/delete** by search criteria (see below)
+- 📈 **Stats:** node count, edge count, average degree
+- 🔄 **Import/export:** snapshot/restore full graph
+- ⚡ Fast, super lightweight, perfect for graph semantic search, retrieval-augmented generation, etc.
 
 ## Installation
 
 ```bash
 npm install tiny-graph-db
-````
-
----
+```
 
 ## Quick Start
 
@@ -59,265 +53,275 @@ npm install tiny-graph-db
 const TinyGraphDB = require('tiny-graph-db');
 const db = new TinyGraphDB();
 
-// Adding some sample data
-const node1 = db.addNode('Document1', { type: 'document', content: 'AI research paper' });
-const node2 = db.addNode('Concept1', { type: 'concept', domain: 'AI' });
-const node3 = db.addNode('Author1', { type: 'person', name: 'John Doe' });
+// Add nodes with embeddings
+const nodeA = db.addNode('Paper A', { type: 'paper', embedding: [0.2, 0.1, 0.5] });
+const nodeC = db.addNode('Concept X', { type: 'concept', embedding: [0.25, 0.1, 0.55] });
+const nodeP = db.addNode('Author', { type: 'person', embedding: [0.9, 0.8, 0.7] });
 
-const rel1 = db.addRelation('contains', node1.id, node2.id, { confidence: 0.9 });
-const rel2 = db.addRelation('authored_by', node1.id, node3.id, { confidence: 1.0 });
+const rel1 = db.addRelation('mentions', nodeA.id, nodeC.id, { confidence: 0.92 });
+const rel2 = db.addRelation('authored_by', nodeA.id, nodeP.id, { confidence: 1.0 });
 
-// Search examples
-console.log('Search: nodes with type "concept":', db.searchNodes({ metadata: { type: 'concept' } }));
-console.log('Search: relations with confidence > 0.8:', db.searchRelations({ metadata: { confidence: { gt: 0.8 } } }));
+// Node search by metadata
+console.log('All concepts:', db.searchNodes({ metadata: { type: 'concept' } }));
 
-// Traversal examples
-console.log('Traverse: from node1 (depth 2):', db.traverseFromNode(node1.id, { maxDepth: 2, directions: ['outgoing'] }));
-console.log('Traverse: from metadata {type: "document"}:', db.traverseFromMetadata({ type: 'document' }, 1));
+// Cosine similarity search
+const qv = [0.2, 0.1, 0.52];
+const similar = db.searchNodesByCosineSimilarity(qv, { threshold: 0.99 });
+console.log('Semantically closest nodes:', similar);
 
-// Update example
-db.updateNode(node1.id, { name: 'Updated Document', metadata: { updated: true } });
+// Traverse outgoing links from nodeA up to depth 2
+const walk = db.traverseFromNode(nodeA.id, { maxDepth: 2, directions: ['outgoing'] });
+console.log('Traversal:', walk);
 
-console.log('Graph stats:', db.getStats());
+// Batch update: update all "concept" nodes
+db.updateBySearch('node', { metadata: { type: 'concept' } }, { metadata: { reviewed: true } });
 
+// Batch delete: remove all relations with low confidence
+db.deleteBySearch('relation', { metadata: { confidence: { lt: 0.95 } } });
+
+// Save (usually auto, but explicit call)
+db.flushToDisk();
 ```
-
----
 
 ## API
 
 ### Constructor
 
-```ts
+```js
 new TinyGraphDB(filePath?: string)
 ```
-
-* **filePath**: path to JSON file for persistence (default: `./graph_data.json`).
-
----
+- **filePath**: Path to JSON file (default: `'./graph_data.json'`).
 
 ### Node Operations
 
-| Method                                               | Description                                    | Returns               |
-|------------------------------------------------------| ---------------------------------------------- | --------------------- |
-| `addNode(name: string, metadata = {}, flush = true)` | Creates a node with given name & metadata      | `Node` object         |
-| `getNode(nodeId: string)`                            | Fetches a node by its ID                       | `Node` or `undefined` |
-| `getAllNodes()`                                      | Returns all nodes                              | `Node[]`              |
-| `updateNode(nodeId: string, updates)`                | Update name and/or metadata on a node          | Updated `Node`        |
-| `deleteNode(nodeId: string)`                         | Deletes a node and all its connected relations | Deleted `Node`        |
-| `deleteBySearch('node', conditions)`                 | Deletes **all** nodes matching `conditions`    | `Node[]`              |
+| Method                                                        | Description                                            | Returns               |
+|---------------------------------------------------------------|--------------------------------------------------------|-----------------------|
+| `addNode(name, metadata = {}, flush = true)`                  | Create node with name/metadata                         | Node object           |
+| `getNode(nodeId)`                                             | Look up node by ID                                     | Node or `undefined`   |
+| `getAllNodes()`                                               | Get all nodes                                          | `Node[]`              |
+| `updateNode(nodeId, {name?, metadata?})`                      | Update name/metadata                                   | Updated node          |
+| `deleteNode(nodeId)`                                          | Remove node and all its relations                      | Deleted node object   |
+| `deleteBySearch('node', conditions)`                          | Batch delete by search                                 | Array of removed      |
 
 ### Relation Operations
 
-| Method                                                                 | Description                                     | Returns                   |
-|------------------------------------------------------------------------| ----------------------------------------------- | ------------------------- |
-| `addRelation(name, fromNodeId, toNodeId, metadata = {}, flush = true)` | Creates an edge between two existing nodes      | `Relation`                |
-| `getRelation(relationId: string)`                                      | Fetches a relation by ID                        | `Relation` or `undefined` |
-| `getAllRelations()`                                                    | Returns all relations                           | `Relation[]`              |
-| `updateRelation(relationId, updates)`                                  | Update name and/or metadata on a relation       | Updated `Relation`        |
-| `deleteRelation(relationId: string)`                                   | Deletes a single relation                       | Deleted `Relation`        |
-| `deleteBySearch('relation', conditions)`                               | Deletes **all** relations matching `conditions` | `Relation[]`              |
-
----
-
-### Graph Traversal
-
-```ts
-traverseFromNode(startNodeId, options?)
-traverseFromRelation(startRelationId, maxDepth?)
-traverseFromMetadata(metadataConditions, maxDepth?)
-```
-
-* **options** for `traverseFromNode`:
-
-  * `maxDepth`: number (default: ∞)
-  * `directions`: `['outgoing','incoming']`
-  * `relationName?`: filter by relation name
-* **Returns**: an array of `[ fromNode, relation, toNode ]` tuples.
-
----
+| Method                                                        | Description                                            | Returns                   |
+|---------------------------------------------------------------|--------------------------------------------------------|---------------------------|
+| `addRelation(name, fromNodeId, toNodeId, metadata = {}, flush = true)` | Create edge between nodes                       | Relation object           |
+| `getRelation(relationId)`                                     | Fetch edge by ID                                      | Relation or `undefined`   |
+| `getAllRelations()`                                           | Get all edges                                         | Relation[]                |
+| `updateRelation(relationId, {name?, metadata?})`              | Update name/metadata                                  | Updated relation          |
+| `deleteRelation(relationId)`                                  | Remove relation                                       | Deleted relation object   |
+| `deleteBySearch('relation', conditions)`                      | Batch delete by search                                | Array of removed          |
 
 ### Query & Search
 
-```ts
+```js
 searchNodes(conditions: SearchConditions): Node[]
 searchRelations(conditions: SearchConditions): Relation[]
 ```
 
-* **conditions**:
+**conditions**:
+- `name`: string | RegExp | `{ contains: string }`
+- `id`, `fromNodeId`, `toNodeId`
+- `metadata`: `{ [key]: ... }` supports:
+  - equality, comparison: `{ eq, ne, gt, gte, lt, lte, contains, startsWith, endsWith, in }`
+  - cosine similarity: `{ cosineSimilarity: { queryEmbedding, threshold } }`
+- `cosineSimilarity` (top-level): `{ queryEmbedding, embeddingKey, threshold }`
 
-  * `name`: string | `RegExp` | `{ contains: string }`
-  * `id`, `fromNodeId`, `toNodeId`
-  * `metadata`: `{ [key]: valueOrFilter }`
+### Cosine Similarity Search
 
-    * supports `{ eq, ne, gt, gte, lt, lte, contains, startsWith, endsWith, in }`
-
-#### Examples
 ```js
-const TinyGraphDB = require('tiny-graph-db');
-const db = new TinyGraphDB('./example_graph.json');
-
-// ——— Create sample nodes ———
-const book1    = db.addNode('Dune',        { genre: 'sci-fi',   pages: 412,  published: 1965 });
-const book2    = db.addNode('Foundation',  { genre: 'sci-fi',   pages: 255,  published: 1951 });
-const book3    = db.addNode('Hamlet',      { genre: 'drama',    pages: 160,  published: 1603 });
-const author1  = db.addNode('Frank Herbert', { nationality: 'US',  awards: 2 });
-const author2  = db.addNode('Isaac Asimov',  { nationality: 'US',  awards: 5 });
-const author3  = db.addNode('William Shakespeare', { nationality: 'UK', awards: 0 });
-
-// ——— Create sample relations ———
-const rel1 = db.addRelation('wrote', book1.id,   author1.id, { role: 'author'   });
-const rel2 = db.addRelation('wrote', book2.id,   author2.id, { role: 'author'   });
-const rel3 = db.addRelation('wrote', book3.id,   author3.id, { role: 'playwright' });
-const rel4 = db.addRelation('influenced', author2.id, author1.id, { year: 1960 });
+searchNodesByCosineSimilarity(queryEmbedding: number[], options?): Array
+searchRelationsByCosineSimilarity(queryEmbedding: number[], options?): Array
+cosineSimilarity(vecA: number[], vecB: number[]): number
 ```
 
-##### 1. Search nodes by **exact name**
+- `queryEmbedding`: Numeric vector
+- Options:
+  - `embeddingKey`: metadata key for vector (default: `'embedding'`)
+  - `threshold`: similarity threshold (default: 0.5)
+  - `limit`: max results (default: 10)
+
+#### Example
 
 ```js
-// Find the node whose name is exactly "Dune":
-const result = db.searchNodes({ name: 'Dune' });
-console.log(result);
-// → [ { id: '…', name: 'Dune', metadata: { genre: 'sci-fi', … } } ]
+db.searchNodesByCosineSimilarity([0.1, 0.2, 0.3], { threshold: 0.8, limit: 3 });
 ```
 
-##### 2. Search nodes by **name contains** (case-insensitive)
+### Graph Traversal
+
+| Method                                             | Description                                  | Returns                         |
+|----------------------------------------------------|----------------------------------------------|-----------------------------------|
+| `traverseFromNode(startNodeId, options)`           | Walks from a node, following edges (see below) | Array of `[fromNode, relation, toNode]` |
+| `traverseFromRelation(startRelationId, maxDepth?)` | Starts traversal from a relation               | Same as above                    |
+| `traverseFromMetadata(metadataConditions, maxDepth?)` | Begins traverse from nodes/relations that match metadata | Same as above         |
+
+**Options for `traverseFromNode`:**
+- `maxDepth`: limit depth (`Infinity` by default)
+- `directions`: `['outgoing','incoming']`
+- `relationName`: (optional) filter by relation name
+
+#### Example
 
 ```js
-// Find all nodes whose name contains "isaac" (will match "Isaac Asimov"):
-const result = db.searchNodes({ name: { contains: 'isaac' } });
-console.log(result.map(n => n.name));
-// → [ 'Isaac Asimov' ]
+db.traverseFromNode(nodeId, { maxDepth: 2, directions: ['outgoing'] });
+```
+Result: Array of `[fromNode, relation, toNode]` triplets in visit order.
+
+### Batch Update / Delete
+
+#### Update by search
+
+```js
+updateBySearch('node' | 'relation', searchConditions, { name?, metadata? }): Array
+// Example:
+db.updateBySearch('node', { metadata: { genre: 'sci-fi' } }, { name: 'SF Novel' });
 ```
 
-##### 3. Search nodes by **name regex**
+#### Delete by search
 
 ```js
-// Find any book title that starts with 'F' or 'H':
-const result = db.searchNodes({ name: /^F|^H/ });
-console.log(result.map(n => n.name));
-// → [ 'Foundation', 'Hamlet' ]
+deleteBySearch('node' | 'relation', searchConditions): Array
+// Example:
+db.deleteBySearch('relation', { metadata: { confidence: { lt: 0.9 } } });
 ```
 
-##### 4. Search nodes by **metadata equality** and **comparison**
+### GraphRAG & Hierarchical Traversal
 
+#### Hybrid search and traversal for retrieval-augmented-graph (RAG) and LLM flows
 ```js
-// All sci-fi books:
-const scifi = db.searchNodes({ metadata: { genre: 'sci-fi' } });
+searchAndTraverse(queryEmbedding, options?): Array
+```
 
-// Books published before 1900:
-const classics = db.searchNodes({
-  metadata: { published: { lt: 1900 } }
+Supports:
+- Cosine similarity search + regular filters, for nodes/relations
+- For each initial match, traverses up to N hops, directionally (optionally, end traversal on node only)
+- Returns rich hierarchical JSON
+
+**Options:**
+- `embeddingKey`, `threshold`, `limit` - see cosine similarity
+- `hops`: Number of hops to traverse (default: 3)
+- `nodeFilters`, `relationFilters`: Additional filters
+- `searchNodes`, `searchRelations`: Whether to include nodes, edges, or both
+- `directions`: e.g., `['outgoing', 'incoming']`
+- `endOnNode`: bool (whether to always finish traversal on nodes)
+
+**Example:**
+```js
+const tree = db.searchAndTraverse([0.2, 0.1, 0.5], {
+  hops: 2,
+  searchNodes: true,
+  searchRelations: false,
+  nodeFilters: { metadata: { type: 'paper' } },
 });
-
-console.log(scifi.map(n => n.name));     // → [ 'Dune', 'Foundation' ]
-console.log(classics.map(n => n.name));  // → [ 'Foundation', 'Hamlet' ]
+console.log(tree);
+// Output: array of hierarchical trees, each rooted on an initial (semantic) hit, with outgoing/incoming relations, connected nodes/edges & so forth
 ```
-
-##### 5. Search nodes by **metadata “in” list**
-
-```js
-// Find all authors from US or UK:
-const authors = db.searchNodes({
-  metadata: { nationality: { in: ['US', 'UK'] } }
-});
-console.log(authors.map(a => a.name));
-// → [ 'Frank Herbert', 'Isaac Asimov', 'William Shakespeare' ]
-```
-
-##### 6. Search relations by **relation name** and **metadata**
-
-```js
-// All "wrote" relations:
-const wroteRels = db.searchRelations({ name: 'wrote' });
-
-// Relations where influence happened after 1950:
-const influenceRels = db.searchRelations({
-  name: 'influenced',
-  metadata: { year: { gt: 1950 } }
-});
-
-console.log(wroteRels.length);      // → 3
-console.log(influenceRels);         // → [ { id: '…', name: 'influenced', … } ]
-```
-
-##### 7. Combining condition types
-```js
-// Sci-fi books by authors with >2 awards:
-const sciFiBooks = db.searchNodes({
-  metadata: { genre: 'sci-fi' }
-});
-const topAuthors = db.searchNodes({
-  metadata: { awards: { gt: 2 } }
-});
-
-// Then filter relations:
-const result = db
-  .getAllRelations()
-  .filter(r =>
-    r.name === 'wrote'
-    && sciFiBooks.some(b => b.id === r.fromNodeId)
-    && topAuthors.some(a => a.id === r.toNodeId)
-  );
-console.log(result);
-```
-
----
 
 ### Import / Export
 
-```ts
-exportData(): { nodes: Node[]; relations: Relation[] }
-importData(data: { nodes; relations })
+```js
+exportData(): { nodes: Node[], relations: Relation[] }
+importData(data: { nodes, relations }): void
 ```
 
-* `exportData()` returns a JSON-serializable object.
-* `importData(...)` wipes current graph and loads provided data, then persists.
-
----
+*Export* produces the full graph dataset as JSON-serializable data.
+*Import* wipes and loads supplied graph, then persists.
 
 ### Utility
 
-* `getNeighbors(nodeId)`
-  List all adjacent nodes & relation directions.
-* `getStats()`
-  `{ nodeCount, relationCount, avgDegree }`
-* `flushToDisk()`
-  Flushes the graph to disk. Everything by-default is always flushed to disk. See `flush` param in `addNode()` and `addRelation()` methods.
+- `getNeighbors(nodeId)`: All neighbor nodes, with edge and direction
+  - Returns: Array of `{ node, relation, direction }`
+- `getStats()`: `{ nodeCount, relationCount, avgDegree }`
+- `flushToDisk()`: Explicit save to disk (auto after every mutation unless using `flush = false` param on add)
+- `rebuildNodeRelationsIndex()`: Internal; rebuilds edge indices (auto-run after import)
 
----
+## Examples
 
-### Performance Benchmarks
-1. Benchmarking script: `node src/benchmark.js 1000 2000 5` or `npm run benchmark -- 1000 2000 5`
-2. 1000 nodes, ~2000 relations, 5 rounds
-3. Results 
+### 1. Traditional Search
 
-  | Function            | Time (ms) | Ops/sec       |
-  |---------------------|-----------|---------------|
-  | `getNode()`         | 0.0001    | 8,473,743      |
-  | `traverseFromNode()`| 0.0072    | 138,175        |
-  | `searchNodes()`     | 0.1728    | 5,787          |
+```js
+const book1    = db.addNode('Dune',        { genre: 'sci-fi',   pages: 412, published: 1965 });
+const book2    = db.addNode('Foundation',  { genre: 'sci-fi',   pages: 255, published: 1951 });
+const author1  = db.addNode('Frank Herbert', { nationality: 'US' });
 
+// Find all US authors:
+db.searchNodes({ metadata: { nationality: 'US' } });
 
----
+// Find all books published pre-1960:
+db.searchNodes({ metadata: { published: { lt: 1960 } } });
+```
+
+### 2. Cosine Similarity Search
+
+```js
+const doc = db.addNode('Graph Vector', { embedding: [0.2, 0.4, 0.6] });
+// Find similar to [0.2, 0.41, 0.67]:
+db.searchNodesByCosineSimilarity([0.2, 0.41, 0.67], { threshold: 0.95 });
+```
+
+### 3. Traversals
+
+```js
+// Walk two hops out from a node
+const walk = db.traverseFromNode(doc.id, { maxDepth: 2, directions: ['outgoing'] });
+
+// Start traversal from a relation
+const traverseRels = db.traverseFromRelation(rel1.id, 3);
+
+// Traverse from all nodes with type "paper":
+db.traverseFromMetadata({ type: 'paper' }, 2);
+```
+
+### 4. Batch Update & Delete
+
+```js
+// Tag all "concept" nodes as reviewed
+db.updateBySearch('node', { metadata: { type: 'concept' } }, { metadata: { reviewed: true } });
+// Delete all weak relations
+db.deleteBySearch('relation', { metadata: { confidence: { lt: 0.8 } } });
+```
+
+### 5. Hybrid "search and traverse" (GraphRAG pattern)
+
+```js
+// Retrieve node (by semantic match) then its 2-hop subgraph
+const rag = db.searchAndTraverse([0.25, 0.1, 0.5], { hops: 2 });
+console.log(JSON.stringify(rag, null, 2));
+```
+
+### 6. Utilities
+
+```js
+console.log('Stats:', db.getStats());
+console.log('Neighbors of nodeA:', db.getNeighbors(nodeA.id));
+// Export/import
+const json = db.exportData();
+db.importData(json);
+```
+
+## Performance Benchmarks
+
+| Function                        | Time (ms) | Ops/sec    |
+|----------------------------------|-----------|------------|
+| getNode()                       | 0.0001    | 8,473,743  |
+| traverseFromNode()              | 0.0072    | 138,175    |
+| searchNodes()                   | 0.1728    |  5,787     |
+| searchNodesByCosineSimilarity() | 0.3456    |  2,893     |
+
+Run benchmarks: `node src/benchmark.js 1000 2000 5` or `npm run benchmark -- 1000 2000 5`
 
 ## Contributing
 
 1. Fork the repo
-2. Create a feature branch `git checkout -b feat/my-feature`
-3. Commit your changes (`git commit -m 'Add awesome feature'`)
-4. Push (`git push origin feat/my-feature`)
-5. Open a Pull Request
+2. Create a branch: `git checkout -b feat/my-feature`
+3. Commit & push, then open a PR
 
-Please file issues for bugs or feature requests via GitHub Issues.
-
----
+Please file bugs/requests using GitHub Issues.
 
 ## License
 
-This project is licensed under the **MIT License**.
-See [LICENSE](./LICENSE) for details.
-
----
+MIT License (see [LICENSE](./LICENSE))
 
 > Built with ♥ by [freakynit](https://github.com/freakynit)
